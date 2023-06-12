@@ -201,15 +201,6 @@ class SubjectLoader(torch.utils.data.Dataset):
     """Single subject data loader for training and evaluation."""
 
     SPLITS = ["train", "test"]
-    SUBJECT_IDS = [
-        "garden",
-        "bicycle",
-        "bonsai",
-        "counter",
-        "kitchen",
-        "room",
-        "stump",
-    ]
 
     OPENGL_CAMERA = False
 
@@ -222,7 +213,7 @@ class SubjectLoader(torch.utils.data.Dataset):
         num_rays: int = None,
         near: float = None,
         far: float = None,
-        batch_over_images: bool = True,
+        batch_over_images: bool = False,
         factor: int = 1,
         device: str = "cpu",
     ):
@@ -244,7 +235,7 @@ class SubjectLoader(torch.utils.data.Dataset):
         )
         # normalize the scene
         T, sscale = similarity_from_cameras(
-            self.camtoworlds, strict_scaling=False
+            self.camtoworlds, strict_scaling=True
         )
         self.camtoworlds = np.einsum("nij, ki -> nkj", self.camtoworlds, T)
         self.camtoworlds[:, :3, 3] *= sscale
@@ -271,7 +262,7 @@ class SubjectLoader(torch.utils.data.Dataset):
 
     def preprocess(self, data):
         """Process the fetched / cached data with randomness."""
-        pixels, rays = data["rgb"], data["rays"]
+        pixels, rays, img = data["rgb"], data["rays"], data["img"]
 
         if self.training:
             if self.color_bkgd_aug == "random":
@@ -285,6 +276,7 @@ class SubjectLoader(torch.utils.data.Dataset):
             color_bkgd = torch.ones(3, device=self.images.device)
 
         return {
+            "img": img,
             "pixels": pixels,  # [n_rays, 3] or [h, w, 3]
             "rays": rays,  # [n_rays,] or [h, w]
             "color_bkgd": color_bkgd,  # [3,]
@@ -325,6 +317,9 @@ class SubjectLoader(torch.utils.data.Dataset):
             y = y.flatten()
 
         # generate rays
+        img = torch.transpose(self.images[index], 0, 2)
+        img = torch.transpose(img, 1, 2)
+        img = (img / 255.0).unsqueeze(0).cuda()
         rgb = self.images[image_id, y, x] / 255.0  # (num_rays, 3)
         c2w = self.camtoworlds[image_id]  # (num_rays, 3, 4)
         camera_dirs = F.pad(
@@ -360,6 +355,7 @@ class SubjectLoader(torch.utils.data.Dataset):
         rays = Rays(origins=origins, viewdirs=viewdirs)
 
         return {
+            "img": img,
             "rgb": rgb,  # [h, w, 3] or [num_rays, 3]
             "rays": rays,  # [h, w, 3] or [num_rays, 3]
         }

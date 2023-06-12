@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torch.autograd import Function
 from torch.cuda.amp import custom_bwd, custom_fwd
+import torch.nn as nn
 
 try:
     import tinycudann as tcnn
@@ -87,7 +88,6 @@ class NGPRadianceField(torch.nn.Module):
             aabb = torch.tensor(aabb, dtype=torch.float32)
         self.register_buffer("aabb", aabb)
         self.num_dim = num_dim
-        self.use_viewdirs = use_viewdirs
         self.density_activation = density_activation
         self.unbounded = unbounded
         self.base_resolution = base_resolution
@@ -100,21 +100,21 @@ class NGPRadianceField(torch.nn.Module):
             (np.log(max_resolution) - np.log(base_resolution)) / (n_levels - 1)
         ).tolist()
 
-        if self.use_viewdirs:
-            self.direction_encoding = tcnn.Encoding(
-                n_input_dims=num_dim,
-                encoding_config={
-                    "otype": "Composite",
-                    "nested": [
-                        {
-                            "n_dims_to_encode": 3,
-                            "otype": "SphericalHarmonics",
-                            "degree": 4,
-                        },
-                        # {"otype": "Identity", "n_bins": 4, "degree": 4},
-                    ],
-                },
-            )
+        self.direction_encoding = tcnn.Encoding(
+            n_input_dims=num_dim,
+            encoding_config={
+                "otype": "Composite",
+                "nested": [
+                    {
+                        "n_dims_to_encode": 3,
+                        "otype": "SphericalHarmonics",
+                        "degree": 4,
+                    },
+                    # {"otype": "Identity", "n_bins": 4, "degree": 4},
+                ],
+            },
+        )
+        self.appearance_encoding = AppearanceEncoding(3)
 
         self.mlp_base = tcnn.NetworkWithInputEncoding(
             n_input_dims=num_dim,
@@ -131,29 +131,24 @@ class NGPRadianceField(torch.nn.Module):
                 "otype": "FullyFusedMLP",
                 "activation": "ReLU",
                 "output_activation": "None",
-                "n_neurons": 64,
+                "n_neurons": 128,
                 "n_hidden_layers": 1,
             },
         )
-        if self.geo_feat_dim > 0:
-            self.mlp_head = tcnn.Network(
-                n_input_dims=(
-                    (
-                        self.direction_encoding.n_output_dims
-                        if self.use_viewdirs
-                        else 0
-                    )
-                    + self.geo_feat_dim
-                ),
-                n_output_dims=3,
-                network_config={
-                    "otype": "FullyFusedMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": 64,
-                    "n_hidden_layers": 2,
-                },
-            )
+        
+        self.mlp_head = tcnn.Network(
+            n_input_dims=(
+                self.direction_encoding.n_output_dims + self.appearance_encoding.output_nc + self.geo_feat_dim
+            ),
+            n_output_dims=3,
+            network_config={
+                "otype": "CutlassMLP",
+                "activation": "ReLU",
+                "output_activation": "None",
+                "n_neurons": 512,
+                "n_hidden_layers": 2,
+            },
+        )
 
     def query_density(self, x, return_feat: bool = False):
         if self.unbounded:
@@ -179,14 +174,12 @@ class NGPRadianceField(torch.nn.Module):
         else:
             return density
 
-    def _query_rgb(self, dir, embedding, apply_act: bool = True):
+    def query_rgb(self, dir, embedding, img, apply_act: bool = True):
         # tcnn requires directions in the range [0, 1]
-        if self.use_viewdirs:
-            dir = (dir + 1.0) / 2.0
-            d = self.direction_encoding(dir.reshape(-1, dir.shape[-1]))
-            h = torch.cat([d, embedding.reshape(-1, self.geo_feat_dim)], dim=-1)
-        else:
-            h = embedding.reshape(-1, self.geo_feat_dim)
+        dir = (dir + 1.0) / 2.0
+        d = self.direction_encoding(dir.reshape(-1, dir.shape[-1]))
+        a = self.appearance_encoding(img).expand(d.shape[0],-1)
+        h = torch.cat([d, a, embedding.reshape(-1, self.geo_feat_dim)], dim=-1)
         rgb = (
             self.mlp_head(h)
             .reshape(list(embedding.shape[:-1]) + [3])
@@ -200,13 +193,14 @@ class NGPRadianceField(torch.nn.Module):
         self,
         positions: torch.Tensor,
         directions: torch.Tensor = None,
+        img: torch.Tensor = None,
     ):
-        if self.use_viewdirs and (directions is not None):
+        if directions is not None:
             assert (
                 positions.shape == directions.shape
             ), f"{positions.shape} v.s. {directions.shape}"
             density, embedding = self.query_density(positions, return_feat=True)
-            rgb = self._query_rgb(directions, embedding=embedding)
+            rgb = self.query_rgb(directions, embedding=embedding, img=img)
         return rgb, density  # type: ignore
 
 
@@ -277,3 +271,36 @@ class NGPDensityField(torch.nn.Module):
             * selector[..., None]
         )
         return density
+
+
+class AppearanceEncoding(nn.Module):
+  def __init__(self, input_dim_a, output_nc=48):
+    super(AppearanceEncoding, self).__init__()
+    self.output_nc = output_nc
+    dim = 64
+    self.model = nn.Sequential(
+        nn.ReflectionPad2d(3),
+        nn.Conv2d(input_dim_a, dim, 7, 1),
+        nn.ReLU(inplace=True),  ## size
+        nn.ReflectionPad2d(1),
+        nn.Conv2d(dim, dim*2, 4, 2),
+        nn.ReLU(inplace=True),  ## size/2
+        nn.ReflectionPad2d(1),
+        nn.Conv2d(dim*2, dim*4, 4, 2),
+        nn.ReLU(inplace=True),  ## size/4
+        nn.ReflectionPad2d(1),
+        nn.Conv2d(dim*4, dim*4, 4, 2),
+        nn.ReLU(inplace=True),  ## size/8
+        nn.ReflectionPad2d(1),
+        nn.Conv2d(dim*4, dim*4, 4, 2),
+        # nn.Conv2d(dim, dim, 4, 2),
+        nn.ReLU(inplace=True),  ## size/16
+        nn.AdaptiveAvgPool2d(1),
+        nn.Conv2d(dim*4, output_nc, 1, 1, 0))  ## 1*1
+        # nn.Conv2d(dim, output_nc, 1, 1, 0))  ## 1*1
+    return
+
+  def forward(self, x):
+    x = self.model(x)
+    output = x.view(x.size(0), -1)
+    return output

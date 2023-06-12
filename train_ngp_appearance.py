@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import tqdm
+import os
 from lpips import LPIPS
 from radiance_fields.ngp_appearance import NGPDensityField, NGPRadianceField
 
@@ -42,13 +43,6 @@ parser.add_argument(
     help="which train split to use",
 )
 parser.add_argument(
-    "--scene",
-    type=str,
-    default="lego",
-    choices=NERF_SYNTHETIC_SCENES + MIPNERF360_UNBOUNDED_SCENES,
-    help="which scene to use",
-)
-parser.add_argument(
     "--test_chunk_size",
     type=int,
     default=8192,
@@ -67,13 +61,13 @@ set_random_seed(42)
 from datasets.nerf_colmap import SubjectLoader
 
 # training parameters
-max_steps = 20000
-init_batch_size = 4096
+max_steps = 200000
+init_batch_size = 4096 #* 2
 weight_decay = 0.0
 # scene parameters
 unbounded = True
 aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
-near_plane = 0.2  # TODO: Try 0.02
+near_plane = 0.05  # TODO: Try 0.02
 far_plane = 1e3
 # dataset parameters
 train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 4}
@@ -92,17 +86,25 @@ proposal_networks = [
         n_levels=5,
         max_resolution=256,
     ).to(device),
+    NGPDensityField(
+        aabb=aabb,
+        unbounded=unbounded,
+        n_levels=5,
+        max_resolution=512,
+    ).to(device),
 ]
 # render parameters
 num_samples = 48
-num_samples_per_prop = [256, 96]
+num_samples_per_prop = [256, 96, 96]
 sampling_type = "lindisp"
 opaque_bkgd = True
+lr = 1e-3
 
+torch.autograd.set_detect_anomaly(True)
 
 
 train_dataset = SubjectLoader(
-    subject_id=args.scene,
+    subject_id=0,
     root_fp=args.data_root,
     split=args.train_split,
     num_rays=init_batch_size,
@@ -111,7 +113,7 @@ train_dataset = SubjectLoader(
 )
 
 test_dataset = SubjectLoader(
-    subject_id=args.scene,
+    subject_id=0,
     root_fp=args.data_root,
     split="test",
     num_rays=None,
@@ -124,7 +126,7 @@ prop_optimizer = torch.optim.Adam(
     itertools.chain(
         *[p.parameters() for p in proposal_networks],
     ),
-    lr=1e-2,
+    lr=lr,
     eps=1e-15,
     weight_decay=weight_decay,
 )
@@ -147,10 +149,10 @@ prop_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
 estimator = PropNetEstimator(prop_optimizer, prop_scheduler).to(device)
 
 grad_scaler = torch.cuda.amp.GradScaler(2**10)
-radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded).to(device)
+radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=8192*8).to(device)
 optimizer = torch.optim.Adam(
     radiance_field.parameters(),
-    lr=1e-2,
+    lr=lr,
     eps=1e-15,
     weight_decay=weight_decay,
 )
@@ -191,6 +193,7 @@ for step in range(max_steps + 1):
     render_bkgd = data["color_bkgd"]
     rays = data["rays"]
     pixels = data["pixels"]
+    img = data["img"]
 
     proposal_requires_grad = proposal_requires_grad_fn(step)
     # render
@@ -209,6 +212,7 @@ for step in range(max_steps + 1):
         render_bkgd=render_bkgd,
         # train options
         proposal_requires_grad=proposal_requires_grad,
+        img=img
     )
     estimator.update_every_n_steps(
         extras["trans"], proposal_requires_grad, loss_scaler=1024
@@ -216,6 +220,7 @@ for step in range(max_steps + 1):
 
     # compute loss
     loss = F.smooth_l1_loss(rgb, pixels)
+    # loss = F.mse_loss(rgb, pixels)
 
     optimizer.zero_grad()
     # do not unscale it because we are using Adam.
@@ -223,7 +228,7 @@ for step in range(max_steps + 1):
     optimizer.step()
     scheduler.step()
 
-    if step % 10000 == 0:
+    if step % 2000 == 0:
         elapsed_time = time.time() - tic
         loss = F.mse_loss(rgb, pixels)
         psnr = -10.0 * torch.log(loss) / np.log(10.0)
@@ -233,8 +238,10 @@ for step in range(max_steps + 1):
             f"num_rays={len(pixels):d} | "
             f"max_depth={depth.max():.3f} | "
         )
+        if step == 0:
+            continue
 
-    if step > 0 and step % max_steps == 0:
+    # if step > 0 and step % max_steps == 0:
         # evaluation
         radiance_field.eval()
         for p in proposal_networks:
@@ -249,6 +256,7 @@ for step in range(max_steps + 1):
                 render_bkgd = data["color_bkgd"]
                 rays = data["rays"]
                 pixels = data["pixels"]
+                img = data["img"]
 
                 # rendering
                 rgb, acc, depth, _, = render_image_with_propnet(
@@ -266,23 +274,34 @@ for step in range(max_steps + 1):
                     render_bkgd=render_bkgd,
                     # test options
                     test_chunk_size=args.test_chunk_size,
+                    img=img,
                 )
                 mse = F.mse_loss(rgb, pixels)
                 psnr = -10.0 * torch.log(mse) / np.log(10.0)
                 psnrs.append(psnr.item())
                 lpips.append(lpips_fn(rgb, pixels).item())
-                if i == 0:
-                    imageio.imwrite(
-                        "rgb_test.png",
-                        (rgb.cpu().numpy() * 255).astype(np.uint8),
-                    )
-                    imageio.imwrite(
-                        "rgb_error.png",
-                        (
-                            (rgb - pixels).norm(dim=-1).cpu().numpy() * 255
-                        ).astype(np.uint8),
-                    )
-                #     break
+                if torch.isnan(psnr):
+                    break
+                imageio.imwrite(
+                    os.path.join(args.out, f"rgb_{i:08}_render.png"),
+                    (rgb.cpu().numpy() * 255).astype(np.uint8),
+                )
+                imageio.imwrite(
+                    os.path.join(args.out, f"rgb_{i:08}_ground_truth.png"),
+                    (pixels.cpu().numpy() * 255).astype(np.uint8),
+                )
+                imageio.imwrite(
+                    os.path.join(args.out, f"rgb_{i:08}_error.png"),
+                    (
+                        (rgb - pixels).norm(dim=-1).cpu().numpy() * 255
+                    ).astype(np.uint8),
+                )
+                imageio.imwrite(
+                    os.path.join(args.out, f"rgb_{i:08}_depth.png"),
+                    (
+                        depth.norm(dim=-1).cpu().numpy() * 255
+                    ).astype(np.uint8),
+                )
         psnr_avg = sum(psnrs) / len(psnrs)
         lpips_avg = sum(lpips) / len(lpips)
         print(f"evaluation: psnr_avg={psnr_avg}, lpips_avg={lpips_avg}")

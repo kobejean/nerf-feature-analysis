@@ -170,6 +170,7 @@ def render_image_with_propnet(
     proposal_requires_grad: bool = False,
     # test options
     test_chunk_size: int = 8192,
+    img: Optional[torch.Tensor] = None,
 ):
     """Render the pixels of an image."""
     rays_shape = rays.origins.shape
@@ -197,7 +198,7 @@ def render_image_with_propnet(
             t_starts.shape[-1], dim=-2
         )
         positions = t_origins + t_dirs * (t_starts + t_ends)[..., None] / 2.0
-        rgb, sigmas = radiance_field(positions, t_dirs)
+        rgb, sigmas = radiance_field(positions, t_dirs, img)
         if opaque_bkgd:
             sigmas[..., -1, :] = torch.inf
         return rgb, sigmas.squeeze(-1)
