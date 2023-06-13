@@ -79,14 +79,14 @@ from datasets.nerf_colmap import SubjectLoader
 max_steps = 200000
 init_batch_size = 4096
 weight_decay = 0.0#1e-3
-lr=9e-4
+lr=8e-4
 # scene parameters
 unbounded = True
 aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
 near_plane = 0.2  # TODO: Try 0.02
 far_plane = 1e3
 # dataset parameters
-train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 1}
+train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 2}
 test_dataset_kwargs = {"factor": 4}
 # model parameters
 proposal_networks = [
@@ -157,7 +157,7 @@ prop_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
 estimator = PropNetEstimator(prop_optimizer, prop_scheduler).to(device)
 
 grad_scaler = torch.cuda.amp.GradScaler(2**10)
-radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*2, n_levels=16, log2_hashmap_size=17).to(device)
+radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*8, n_levels=19, log2_hashmap_size=20).to(device)
 optimizer = torch.optim.Adam(
     radiance_field.parameters(),
     lr=lr,
@@ -235,7 +235,7 @@ for step in range(max_steps + 1):
     optimizer.step()
     scheduler.step()
 
-    if step % 5000 == 0:
+    if step % 20000 == 0:
         elapsed_time = time.time() - tic
         loss = F.mse_loss(rgb, pixels)
         psnr = -10.0 * torch.log(loss) / np.log(10.0)

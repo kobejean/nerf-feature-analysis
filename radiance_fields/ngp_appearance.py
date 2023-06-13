@@ -132,7 +132,7 @@ class NGPRadianceField(torch.nn.Module):
                 "activation": "ReLU",
                 "output_activation": "None",
                 "n_neurons": 128,
-                "n_hidden_layers": 1,
+                "n_hidden_layers": 4,
             },
         )
         
