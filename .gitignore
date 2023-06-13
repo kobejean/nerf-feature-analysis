@@ -1,5 +1,4 @@
-output/test1/
-output/old/
+output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
