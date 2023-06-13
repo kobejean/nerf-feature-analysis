@@ -79,14 +79,14 @@ from datasets.nerf_colmap import SubjectLoader
 max_steps = 200000
 init_batch_size = 4096
 weight_decay = 0.0#1e-3
-lr=6e-4
+lr=9e-4
 # scene parameters
 unbounded = True
 aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
 near_plane = 0.2  # TODO: Try 0.02
 far_plane = 1e3
 # dataset parameters
-train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 2}
+train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 1}
 test_dataset_kwargs = {"factor": 4}
 # model parameters
 proposal_networks = [
@@ -293,6 +293,9 @@ for step in range(max_steps + 1):
 
                 torch.save(radiance_field.state_dict(), os.path.join(exp_dir, 'radiance_field.pth'))
                 torch.save(estimator.state_dict(), os.path.join(exp_dir, 'estimator.pth'))
+                for j, net in enumerate(proposal_networks):
+                    torch.save(estimator.state_dict(), os.path.join(exp_dir, f'proposal_network_{j}.pth'))
+
 
                 imageio.imwrite(
                     os.path.join(exp_dir, f"rgb_{i:08}_render.png"),
@@ -308,10 +311,13 @@ for step in range(max_steps + 1):
                         (rgb - pixels).norm(dim=-1).cpu().numpy() * 255
                     ).astype(np.uint8),
                 )
+                vis_depth = torch.log(depth)
+                vis_depth -= torch.min(vis_depth)
+                vis_depth /= torch.max(vis_depth)
                 imageio.imwrite(
                     os.path.join(exp_dir, f"rgb_{i:08}_depth.png"),
                     (
-                        depth.norm(dim=-1).cpu().numpy() * 255
+                        vis_depth.cpu().numpy() * 255
                     ).astype(np.uint8),
                 )
         psnr_avg = sum(psnrs) / len(psnrs)
