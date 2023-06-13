@@ -145,7 +145,7 @@ class NGPRadianceField(torch.nn.Module):
                 "otype": "CutlassMLP",
                 "activation": "ReLU",
                 "output_activation": "None",
-                "n_neurons": 512,
+                "n_neurons": 256,
                 "n_hidden_layers": 2,
             },
         )

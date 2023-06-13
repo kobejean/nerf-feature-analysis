@@ -5,6 +5,7 @@ import argparse
 import itertools
 import pathlib
 import time
+import shutil
 from typing import Callable
 
 import imageio
@@ -53,7 +54,21 @@ parser.add_argument(
     default=str(pathlib.Path.cwd() / "output"),
     help="the output dir",
 )
+parser.add_argument(
+    "--exp_name",
+    type=str,
+    default="experiment",
+    help="experiment name",
+)
 args = parser.parse_args()
+
+exp_dir = os.path.join(args.out, args.exp_name)
+os.makedirs(exp_dir)
+
+# Save the Python scripts
+shutil.copy('train_ngp_a2.py', exp_dir)
+shutil.copy('radiance_fields/ngp_appearance.py', exp_dir)
+shutil.copy('datasets/nerf_colmap.py', exp_dir)
 
 device = "cuda:0"
 set_random_seed(42)
@@ -64,14 +79,14 @@ from datasets.nerf_colmap import SubjectLoader
 max_steps = 200000
 init_batch_size = 4096
 weight_decay = 0.0#1e-3
-lr=1e-4
+lr=6e-4
 # scene parameters
 unbounded = True
 aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
 near_plane = 0.2  # TODO: Try 0.02
 far_plane = 1e3
 # dataset parameters
-train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 1}
+train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 2}
 test_dataset_kwargs = {"factor": 4}
 # model parameters
 proposal_networks = [
@@ -90,7 +105,7 @@ proposal_networks = [
 ]
 # render parameters
 num_samples = 64
-num_samples_per_prop = [256, 128]
+num_samples_per_prop = [256, 96]
 sampling_type = "lindisp"
 opaque_bkgd = True
 
@@ -274,22 +289,27 @@ for step in range(max_steps + 1):
                 lpips.append(lpips_fn(rgb, pixels).item())
                 if torch.isnan(psnr):
                     break
+
+
+                torch.save(radiance_field.state_dict(), os.path.join(exp_dir, 'radiance_field.pth'))
+                torch.save(estimator.state_dict(), os.path.join(exp_dir, 'estimator.pth'))
+
                 imageio.imwrite(
-                    os.path.join(args.out, f"rgb_{i:08}_render.png"),
+                    os.path.join(exp_dir, f"rgb_{i:08}_render.png"),
                     (rgb.cpu().numpy() * 255).astype(np.uint8),
                 )
                 imageio.imwrite(
-                    os.path.join(args.out, f"rgb_{i:08}_ground_truth.png"),
+                    os.path.join(exp_dir, f"rgb_{i:08}_ground_truth.png"),
                     (pixels.cpu().numpy() * 255).astype(np.uint8),
                 )
                 imageio.imwrite(
-                    os.path.join(args.out, f"rgb_{i:08}_error.png"),
+                    os.path.join(exp_dir, f"rgb_{i:08}_error.png"),
                     (
                         (rgb - pixels).norm(dim=-1).cpu().numpy() * 255
                     ).astype(np.uint8),
                 )
                 imageio.imwrite(
-                    os.path.join(args.out, f"rgb_{i:08}_depth.png"),
+                    os.path.join(exp_dir, f"rgb_{i:08}_depth.png"),
                     (
                         depth.norm(dim=-1).cpu().numpy() * 255
                     ).astype(np.uint8),
