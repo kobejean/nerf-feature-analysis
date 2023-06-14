@@ -157,7 +157,8 @@ prop_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
 estimator = PropNetEstimator(prop_optimizer, prop_scheduler).to(device)
 
 grad_scaler = torch.cuda.amp.GradScaler(2**10)
-radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*8, n_levels=19, log2_hashmap_size=20).to(device)
+radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*4, n_levels=18, log2_hashmap_size=19).to(device)
+# radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*8, n_levels=19, log2_hashmap_size=20).to(device)
 optimizer = torch.optim.Adam(
     radiance_field.parameters(),
     lr=lr,
