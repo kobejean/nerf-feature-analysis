@@ -86,7 +86,7 @@ aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
 near_plane = 0.2  # TODO: Try 0.02
 far_plane = 1e3
 # dataset parameters
-train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 2}
+train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 1}
 test_dataset_kwargs = {"factor": 4}
 # model parameters
 proposal_networks = [
@@ -235,7 +235,7 @@ for step in range(max_steps + 1):
     optimizer.step()
     scheduler.step()
 
-    if step % 20000 == 0:
+    if step % 2000 == 0:
         elapsed_time = time.time() - tic
         loss = F.mse_loss(rgb, pixels)
         psnr = -10.0 * torch.log(loss) / np.log(10.0)
@@ -292,9 +292,9 @@ for step in range(max_steps + 1):
 
 
                 torch.save(radiance_field.state_dict(), os.path.join(exp_dir, 'radiance_field.pth'))
-                torch.save(estimator.state_dict(), os.path.join(exp_dir, 'estimator.pth'))
+                # torch.save(estimator.state_dict(), os.path.join(exp_dir, 'estimator.pth'))
                 for j, net in enumerate(proposal_networks):
-                    torch.save(estimator.state_dict(), os.path.join(exp_dir, f'proposal_network_{j}.pth'))
+                    torch.save(net.state_dict(), os.path.join(exp_dir, f'proposal_network_{j}.pth'))
 
 
                 imageio.imwrite(
