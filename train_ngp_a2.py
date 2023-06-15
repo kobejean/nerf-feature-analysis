@@ -83,7 +83,7 @@ lr=8e-4
 # scene parameters
 unbounded = True
 aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
-near_plane = 0.2  # TODO: Try 0.02
+near_plane = 0.01
 far_plane = 1e3
 # dataset parameters
 train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 1}
@@ -157,8 +157,8 @@ prop_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
 estimator = PropNetEstimator(prop_optimizer, prop_scheduler).to(device)
 
 grad_scaler = torch.cuda.amp.GradScaler(2**10)
-radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*4, n_levels=18, log2_hashmap_size=19).to(device)
-# radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*8, n_levels=19, log2_hashmap_size=20).to(device)
+# radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*4, n_levels=18, log2_hashmap_size=19).to(device)
+radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*32, n_levels=21, log2_hashmap_size=22).to(device)
 optimizer = torch.optim.Adam(
     radiance_field.parameters(),
     lr=lr,
@@ -236,7 +236,7 @@ for step in range(max_steps + 1):
     optimizer.step()
     scheduler.step()
 
-    if step % 2000 == 0:
+    if step % 20000 == 0:
         elapsed_time = time.time() - tic
         loss = F.mse_loss(rgb, pixels)
         psnr = -10.0 * torch.log(loss) / np.log(10.0)
