@@ -33,7 +33,7 @@ parser.add_argument(
     "--data_root",
     type=str,
     # default=str(pathlib.Path.cwd() / "data/360_v2"),
-    default=str(pathlib.Path.cwd() / "data/nerf_synthetic"),
+    default="/home/ccl/Datasets/NeRF/aizu-student-hall/processed",
     help="the root dir of the dataset",
 )
 parser.add_argument(
