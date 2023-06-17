@@ -174,11 +174,11 @@ class NGPRadianceField(torch.nn.Module):
         else:
             return density
 
-    def query_rgb(self, dir, embedding, img, apply_act: bool = True):
+    def query_rgb(self, dir, embedding, img, a_vec=None, apply_act: bool = True):
         # tcnn requires directions in the range [0, 1]
         dir = (dir + 1.0) / 2.0
         d = self.direction_encoding(dir.reshape(-1, dir.shape[-1]))
-        a = self.appearance_encoding(img).expand(d.shape[0],-1)
+        a = self.appearance_encoding(img).expand(d.shape[0],-1) if a_vec is None else a_vec.expand(d.shape[0],-1)
         h = torch.cat([d, a, embedding.reshape(-1, self.geo_feat_dim)], dim=-1)
         rgb = (
             self.mlp_head(h)
@@ -194,13 +194,14 @@ class NGPRadianceField(torch.nn.Module):
         positions: torch.Tensor,
         directions: torch.Tensor = None,
         img: torch.Tensor = None,
+        a_vec:  torch.Tensor = None,
     ):
         if directions is not None:
             assert (
                 positions.shape == directions.shape
             ), f"{positions.shape} v.s. {directions.shape}"
             density, embedding = self.query_density(positions, return_feat=True)
-            rgb = self.query_rgb(directions, embedding=embedding, img=img)
+            rgb = self.query_rgb(directions, embedding=embedding, img=img, a_vec=a_vec)
         return rgb, density  # type: ignore
 
 
