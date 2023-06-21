@@ -1,0 +1,40 @@
+{
+    "data_root":"/home/ccl/Datasets/NeRF/aizu-student-hall/processed",
+    "max_steps": 200000,
+    "init_batch_size": 4096,
+    "weight_decay": 0.0,
+    "lr": 8e-4,
+    "unbounded": "True",
+    "near_plane": 0.01,
+    "far_plane": 1e3,
+    "train_dataset_kwargs": {"color_bkgd_aug": "random", "factor": 8},
+    "test_dataset_kwargs": {"factor": 8},
+    "proposal_networks_params": [
+        {
+            "n_levels": 5,
+            "max_resolution": 128
+        },
+        {
+            "n_levels": 5,
+            "max_resolution": 256
+        }
+    ],
+    "num_samples": 64,
+    "num_samples_per_prop": [256, 96],
+    "sampling_type": "lindisp",
+    "opaque_bkgd": "True",
+    "radiance_field": {
+        "max_resolution": 131072, 
+        "n_levels":21, 
+        "log2_hashmap_size":22,
+        "use_viewdirs": "True",
+        "num_dim": 3,
+        "base_resolution": 16,
+        "geo_feat_dim": 15,
+        "appearance_network": {
+            "input_dim_a": 3,
+            "output_nc": 48,
+            "dim": 64
+        }
+    }
+}

@@ -7,6 +7,7 @@ import pathlib
 import time
 from typing import Callable
 
+import json
 import imageio
 import numpy as np
 import torch
@@ -35,6 +36,11 @@ parser.add_argument(
     help="the root dir of the dataset",
 )
 parser.add_argument(
+    "--config",
+    type=str,
+    help="the root dir of the dataset",
+)
+parser.add_argument(
     "--train_split",
     type=str,
     default="train",
@@ -60,49 +66,44 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-exp_dir = os.path.join(args.out_dir, args.exp_name)
-setup_exp_dir(exp_dir)
 
 device = "cuda:0"
 set_random_seed(42)
 
 from datasets.nerf_colmap import SubjectLoader
 
+with open(args.config, "r") as config_file:
+    cfg = json.load(config_file)
+
 # training parameters
-max_steps = 200000
-init_batch_size = 4096
-weight_decay = 0.0#1e-3
-lr=8e-4
+max_steps = cfg['max_steps']
+init_batch_size = cfg['init_batch_size']
+weight_decay = cfg['weight_decay']
+lr=cfg['lr']
 # scene parameters
-unbounded = True
+unbounded = cfg['unbounded']
 aabb = torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device)
-near_plane = 0.01
-far_plane = 1e3
+near_plane = cfg['near_plane']
+far_plane = cfg['far_plane']
 # dataset parameters
-train_dataset_kwargs = {"color_bkgd_aug": "random", "factor": 1}
-test_dataset_kwargs = {"factor": 4}
+train_dataset_kwargs = cfg["train_dataset_kwargs"]
+test_dataset_kwargs = cfg["test_dataset_kwargs"]
 # model parameters
-proposal_networks = [
-    NGPDensityField(
-        aabb=aabb,
-        unbounded=unbounded,
-        n_levels=5,
-        max_resolution=128,
-    ).to(device),
-    NGPDensityField(
-        aabb=aabb,
-        unbounded=unbounded,
-        n_levels=5,
-        max_resolution=256,
-    ).to(device),
-]
+proposal_networks = [ 
+        NGPDensityField(
+            aabb=aabb,
+            unbounded=unbounded,
+            **params,
+        ).to(device) for params in cfg["proposal_networks_params"]]
+
 # render parameters
-num_samples = 64
-num_samples_per_prop = [256, 96]
-sampling_type = "lindisp"
-opaque_bkgd = True
+num_samples = cfg['num_samples']
+num_samples_per_prop = cfg["num_samples_per_prop"]
+sampling_type = cfg['sampling_type']
+opaque_bkgd = cfg['opaque_bkgd']
 
-
+exp_dir = os.path.join(args.out_dir, args.exp_name)
+setup_exp_dir(exp_dir, args.config)
 
 train_dataset = SubjectLoader(
     subject_id=0,
@@ -150,8 +151,7 @@ prop_scheduler = torch.optim.lr_scheduler.ChainedScheduler(
 estimator = PropNetEstimator(prop_optimizer, prop_scheduler).to(device)
 
 grad_scaler = torch.cuda.amp.GradScaler(2**10)
-# radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*4, n_levels=18, log2_hashmap_size=19).to(device)
-radiance_field = NGPRadianceField(aabb=aabb, unbounded=unbounded, max_resolution=4096*32, n_levels=21, log2_hashmap_size=22).to(device)
+radiance_field = NGPRadianceField(cfg=cfg['radiance_field'], aabb=aabb, unbounded=unbounded).to(device)
 optimizer = torch.optim.Adam(
     radiance_field.parameters(),
     lr=lr,

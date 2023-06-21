@@ -72,36 +72,31 @@ class NGPRadianceField(torch.nn.Module):
 
     def __init__(
         self,
+        cfg,
         aabb: Union[torch.Tensor, List[float]],
-        num_dim: int = 3,
-        use_viewdirs: bool = True,
+        unbounded: bool = True,
         density_activation: Callable = lambda x: trunc_exp(x - 1),
-        unbounded: bool = False,
-        base_resolution: int = 16,
-        max_resolution: int = 4096,
-        geo_feat_dim: int = 15,
-        n_levels: int = 16,
-        log2_hashmap_size: int = 19,
     ) -> None:
         super().__init__()
         if not isinstance(aabb, torch.Tensor):
             aabb = torch.tensor(aabb, dtype=torch.float32)
         self.register_buffer("aabb", aabb)
-        self.num_dim = num_dim
+        self.use_viewdirs = cfg["use_viewdirs"]
+        self.num_dim = cfg["num_dim"]
         self.density_activation = density_activation
         self.unbounded = unbounded
-        self.base_resolution = base_resolution
-        self.max_resolution = max_resolution
-        self.geo_feat_dim = geo_feat_dim
-        self.n_levels = n_levels
-        self.log2_hashmap_size = log2_hashmap_size
+        self.base_resolution = cfg["base_resolution"]
+        self.max_resolution = cfg["max_resolution"]
+        self.geo_feat_dim = cfg["geo_feat_dim"]
+        self.n_levels = cfg["n_levels"]
+        self.log2_hashmap_size = cfg["log2_hashmap_size"]
 
         per_level_scale = np.exp(
-            (np.log(max_resolution) - np.log(base_resolution)) / (n_levels - 1)
+            (np.log(self.max_resolution ) - np.log(self.base_resolution)) / (self.n_levels - 1)
         ).tolist()
 
         self.direction_encoding = tcnn.Encoding(
-            n_input_dims=num_dim,
+            n_input_dims=self.num_dim,
             encoding_config={
                 "otype": "Composite",
                 "nested": [
@@ -114,17 +109,17 @@ class NGPRadianceField(torch.nn.Module):
                 ],
             },
         )
-        self.appearance_encoding = AppearanceEncoding(3)
+        self.appearance_encoding = AppearanceEncoding(cfg=cfg["appearance_network"], )
 
         self.mlp_base = tcnn.NetworkWithInputEncoding(
-            n_input_dims=num_dim,
+            n_input_dims=self.num_dim,
             n_output_dims=1 + self.geo_feat_dim,
             encoding_config={
                 "otype": "HashGrid",
-                "n_levels": n_levels,
+                "n_levels": self.n_levels,
                 "n_features_per_level": 2,
-                "log2_hashmap_size": log2_hashmap_size,
-                "base_resolution": base_resolution,
+                "log2_hashmap_size": self.log2_hashmap_size,
+                "base_resolution": self.base_resolution,
                 "per_level_scale": per_level_scale,
             },
             network_config={
@@ -275,30 +270,32 @@ class NGPDensityField(torch.nn.Module):
 
 
 class AppearanceEncoding(nn.Module):
-  def __init__(self, input_dim_a, output_nc=48):
+  def __init__(self, cfg):
     super(AppearanceEncoding, self).__init__()
-    self.output_nc = output_nc
-    dim = 64
+    self.input_dim_a = cfg["input_dim_a"]
+    self.output_nc = cfg["output_nc"]
+    print("self.output_nc", self.output_nc)
+    self.dim = cfg["dim"]
     self.model = nn.Sequential(
         nn.ReflectionPad2d(3),
-        nn.Conv2d(input_dim_a, dim, 7, 1),
+        nn.Conv2d(self.input_dim_a, self.dim, 7, 1),
         nn.ReLU(inplace=True),  ## size
         nn.ReflectionPad2d(1),
-        nn.Conv2d(dim, dim*2, 4, 2),
+        nn.Conv2d(self.dim, self.dim*2, 4, 2),
         nn.ReLU(inplace=True),  ## size/2
         nn.ReflectionPad2d(1),
-        nn.Conv2d(dim*2, dim*4, 4, 2),
+        nn.Conv2d(self.dim*2, self.dim*4, 4, 2),
         nn.ReLU(inplace=True),  ## size/4
         nn.ReflectionPad2d(1),
-        nn.Conv2d(dim*4, dim*4, 4, 2),
+        nn.Conv2d(self.dim*4, self.dim*4, 4, 2),
         nn.ReLU(inplace=True),  ## size/8
         nn.ReflectionPad2d(1),
-        nn.Conv2d(dim*4, dim*4, 4, 2),
-        # nn.Conv2d(dim, dim, 4, 2),
+        nn.Conv2d(self.dim*4, self.dim*4, 4, 2),
+        # nn.Conv2d(self.dim, self.dim, 4, 2),
         nn.ReLU(inplace=True),  ## size/16
         nn.AdaptiveAvgPool2d(1),
-        nn.Conv2d(dim*4, output_nc, 1, 1, 0))  ## 1*1
-        # nn.Conv2d(dim, output_nc, 1, 1, 0))  ## 1*1
+        nn.Conv2d(self.dim*4, self.output_nc, 1, 1, 0))  ## 1*1
+        # nn.Conv2d(self.dim, output_nc, 1, 1, 0))  ## 1*1
     return
 
   def forward(self, x):

@@ -122,10 +122,10 @@ def render_image_with_propnet(
     )
 
 
-def setup_exp_dir(exp_dir):
+def setup_exp_dir(exp_dir, config_path):
     os.makedirs(exp_dir)
 
     # Save the Python scripts
-    shutil.copy('train.py', exp_dir)
+    shutil.copy('train.py', os.path.join(exp_dir, 'config.json'))
     shutil.copytree('radiance_fields', os.path.join(exp_dir, 'radiance_fields'))
     shutil.copytree('datasets', os.path.join(exp_dir, 'datasets'))
