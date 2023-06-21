@@ -128,11 +128,11 @@ class NGPRadianceField(torch.nn.Module):
                 "per_level_scale": per_level_scale,
             },
             network_config={
-                "otype": "FullyFusedMLP",
+                "otype": "CutlassMLP",
                 "activation": "ReLU",
                 "output_activation": "None",
-                "n_neurons": 128,
-                "n_hidden_layers": 2,
+                "n_neurons": 512,
+                "n_hidden_layers": 4,
             },
         )
         
@@ -145,8 +145,8 @@ class NGPRadianceField(torch.nn.Module):
                 "otype": "CutlassMLP",
                 "activation": "ReLU",
                 "output_activation": "None",
-                "n_neurons": 256,
-                "n_hidden_layers": 2,
+                "n_neurons": 512,
+                "n_hidden_layers": 8,
             },
         )
 

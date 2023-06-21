@@ -317,9 +317,8 @@ class SubjectLoader(torch.utils.data.Dataset):
             y = y.flatten()
 
         # generate rays
-        img = torch.transpose(self.images[index], 0, 2)
-        img = torch.transpose(img, 1, 2)
-        img = (img / 255.0).unsqueeze(0).cuda()
+        img = torch.permute(self.images[index].unsqueeze(0), (0, 3, 1, 2))
+        img = (img / 255.0).cuda()
         rgb = self.images[image_id, y, x] / 255.0  # (num_rays, 3)
         c2w = self.camtoworlds[image_id]  # (num_rays, 3, 4)
         camera_dirs = F.pad(

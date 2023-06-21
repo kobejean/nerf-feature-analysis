@@ -5,7 +5,6 @@ import argparse
 import itertools
 import pathlib
 import time
-import shutil
 from typing import Callable
 
 import imageio
@@ -18,10 +17,9 @@ from lpips import LPIPS
 from radiance_fields.ngp_appearance import NGPDensityField, NGPRadianceField
 
 from utils import (
-    MIPNERF360_UNBOUNDED_SCENES,
-    NERF_SYNTHETIC_SCENES,
     render_image_with_propnet,
     set_random_seed,
+    setup_exp_dir
 )
 from nerfacc.estimators.prop_net import (
     PropNetEstimator,
@@ -49,7 +47,7 @@ parser.add_argument(
     default=8192,
 )
 parser.add_argument(
-    "--out",
+    "--out_dir",
     type=str,
     default=str(pathlib.Path.cwd() / "output"),
     help="the output dir",
@@ -62,13 +60,8 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-exp_dir = os.path.join(args.out, args.exp_name)
-os.makedirs(exp_dir)
-
-# Save the Python scripts
-shutil.copy('train_ngp_a2.py', exp_dir)
-shutil.copy('radiance_fields/ngp_appearance.py', exp_dir)
-shutil.copy('datasets/nerf_colmap.py', exp_dir)
+exp_dir = os.path.join(args.out_dir, args.exp_name)
+setup_exp_dir(exp_dir)
 
 device = "cuda:0"
 set_random_seed(42)
