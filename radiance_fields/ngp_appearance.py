@@ -274,7 +274,6 @@ class AppearanceEncoding(nn.Module):
     super(AppearanceEncoding, self).__init__()
     self.input_dim_a = cfg["input_dim_a"]
     self.output_nc = cfg["output_nc"]
-    print("self.output_nc", self.output_nc)
     self.dim = cfg["dim"]
     self.model = nn.Sequential(
         nn.ReflectionPad2d(3),

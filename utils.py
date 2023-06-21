@@ -126,6 +126,7 @@ def setup_exp_dir(exp_dir, config_path):
     os.makedirs(exp_dir)
 
     # Save the Python scripts
-    shutil.copy('train.py', os.path.join(exp_dir, 'config.json'))
+    shutil.copy(config_path, os.path.join(exp_dir, 'config.json'))
+    shutil.copy('train.py', exp_dir)
     shutil.copytree('radiance_fields', os.path.join(exp_dir, 'radiance_fields'))
     shutil.copytree('datasets', os.path.join(exp_dir, 'datasets'))
